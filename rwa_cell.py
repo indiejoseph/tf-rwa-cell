@@ -4,20 +4,21 @@ from tensorflow.python.ops.rnn_cell_impl import _RNNCell as RNNCell
 from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 from tensorflow.python.ops.math_ops import tanh
 from tensorflow.python.ops import variable_scope as vs
+from utils import linear
 
 _checked_scope = core_rnn_cell_impl._checked_scope
-_linear = core_rnn_cell_impl._linear
 RWACellTuple = collections.namedtuple("RWACellTuple", ("h", "n", "d", "a_max"))
 
 class RWACell(RNNCell):
   """Recurrent Weighted Average (cf. http://arxiv.org/abs/1703.01253)."""
 
-  def __init__(self, num_units, input_size=None, activation=tanh, reuse=None):
+  def __init__(self, num_units, input_size=None, activation=tanh, normalize=False, reuse=None):
     if input_size is not None:
-      logging.warn("%s: The input_size parameter is deprecated.", self)
+      tf.logging.warn("%s: The input_size parameter is deprecated.", self)
     self._num_units = num_units
     self._activation = activation
     self._reuse = reuse
+    self._normalize = normalize
 
   @property
   def state_size(self):
@@ -37,13 +38,13 @@ class RWACell(RNNCell):
       h, n, d, a_max = state
 
       with vs.variable_scope("u"):
-        u = _linear(inputs, self._num_units, True)
+        u = linear(inputs, self._num_units, True, normalize=self._normalize)
 
       with vs.variable_scope("g"):
-        g = _linear([inputs, h], self._num_units, True)
+        g = linear([inputs, h], self._num_units, True, normalize=self._normalize)
 
-      with vs.variable_scope("a"):
-        a = _linear([inputs, h], self._num_units, False) # The bias term when factored out of the numerator and denominator cancels and is unnecessary
+      with vs.variable_scope("a"): # The bias term when factored out of the numerator and denominator cancels and is unnecessary
+        a = linear([inputs, h], self._num_units, False, normalize=self._normalize)
 
       z = tf.multiply(u, tanh(g))
 

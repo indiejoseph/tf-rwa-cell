@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 import dataplumbing as dp
 from tensorflow.contrib import rnn
-from tensorflow.contrib.rnn import GRUCell, LSTMCell
+from tensorflow.contrib.rnn import GRUCell, BasicLSTMCell, LayerNormBasicLSTMCell
 from tensorflow.contrib.rnn.python.ops import core_rnn
 from tensorflow.contrib.layers import xavier_initializer as glorot
 from rwa_cell import RWACell
@@ -13,6 +13,8 @@ flags.DEFINE_string("rnn_type", "RWA", "rnn type [RWA, LSTM, GRU]")
 FLAGS = flags.FLAGS
 
 def main(_):
+  np.random.seed(1)
+  tf.set_random_seed(1)
   num_features = dp.train.num_features
   max_steps = dp.train.max_length
   num_cells = 250
@@ -22,11 +24,8 @@ def main(_):
   batch_size = 100
   learning_rate = 0.001
   current_step = 0
-
-  initializer = tf.random_uniform_initializer(
-    minval = -np.sqrt(6.0 * 1.0 / (num_cells + num_classes)),
-    maxval = np.sqrt(6.0 * 1.0 / (num_cells + num_classes))
-  )
+  initializer = tf.random_uniform_initializer(minval=-np.sqrt(6.0 * 1.0 / (num_cells + num_classes)),
+                                              maxval=np.sqrt(6.0 * 1.0 / (num_cells + num_classes)))
 
   with tf.variable_scope("train", initializer=initializer):
     s = tf.Variable(tf.random_normal([num_cells], stddev=np.sqrt(initialization_factor))) # Determines initial state
@@ -37,21 +36,21 @@ def main(_):
 
     if FLAGS.rnn_type == "RWA":
       cell = RWACell(num_cells)
+    elif FLAGS.rnn_type == "RWA_BN":
+      cell = RWACell(num_cells, normalize=True)
     elif FLAGS.rnn_type == "LSTM":
-      cell = LSTMCell(num_cells)
+      cell = BasicLSTMCell(num_cells)
+    elif FLAGS.rnn_type == "LSTM_BN":
+      cell = LayerNormBasicLSTMCell(num_cells)
     elif FLAGS.rnn_type == "GRU":
       cell = GRUCell(num_cells)
 
     states = cell.zero_state(batch_size, tf.float32)
     outputs, states = tf.nn.dynamic_rnn(cell, x, l, states)
 
-    W_o = tf.Variable(
-      tf.random_uniform(
-        [num_cells, num_classes],
-        minval=-np.sqrt(6.0*initialization_factor / (num_cells + num_classes)),
-        maxval=np.sqrt(6.0*initialization_factor / (num_cells + num_classes))
-      )
-    )
+    W_o = tf.Variable(tf.random_uniform([num_cells, num_classes],
+                                        minval=-np.sqrt(6.0*initialization_factor / (num_cells + num_classes)),
+                                        maxval=np.sqrt(6.0*initialization_factor / (num_cells + num_classes))))
     b_o = tf.Variable(tf.zeros([num_classes]))
 
     if FLAGS.rnn_type == "GRU":
@@ -126,9 +125,6 @@ def main(_):
         test_cost = out[0] / np.log(2.0)
         test_accuracy = out[1]
         print('Iteration:', iteration, 'Dataset:', 'test', 'Cost:', test_cost, 'Accuracy:', test_accuracy)
-
-        if test_accuracy >= 100:
-          break
 
       current_step = tf.train.global_step(session, global_step)
 
